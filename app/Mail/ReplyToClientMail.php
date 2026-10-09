@@ -16,6 +16,8 @@ class ReplyToClientMail extends Mailable
     public string $emailSubject;
     public string $replyMessage;
     public ?string $projectCategory;
+    public ?string $intendedRecipient;
+    public bool $isDemoMode;
 
     /**
      * Create a new message instance.
@@ -24,12 +26,16 @@ class ReplyToClientMail extends Mailable
         string $clientName,
         string $emailSubject,
         string $replyMessage,
-        ?string $projectCategory = null
+        ?string $projectCategory = null,
+        ?string $intendedRecipient = null,
+        bool $isDemoMode = false
     ) {
         $this->clientName = $clientName;
         $this->emailSubject = $emailSubject;
         $this->replyMessage = $replyMessage;
         $this->projectCategory = $projectCategory;
+        $this->intendedRecipient = $intendedRecipient;
+        $this->isDemoMode = $isDemoMode;
     }
 
     /**
@@ -37,10 +43,16 @@ class ReplyToClientMail extends Mailable
      */
     public function envelope(): Envelope
     {
-        $replyTo = config('mail.admin_address') ?: config('mail.from.address');
+        $replyTo = ($this->isDemoMode && !empty($this->intendedRecipient))
+            ? $this->intendedRecipient
+            : (config('mail.admin_address') ?: config('mail.from.address'));
+
+        $subject = $this->isDemoMode
+            ? '[Demo Sandbox] ' . $this->emailSubject
+            : $this->emailSubject;
 
         return new Envelope(
-            subject: $this->emailSubject,
+            subject: $subject,
             replyTo: $replyTo ? [$replyTo] : [],
         );
     }
@@ -57,6 +69,8 @@ class ReplyToClientMail extends Mailable
                 'emailSubject' => $this->emailSubject,
                 'replyMessage' => $this->replyMessage,
                 'projectCategory' => $this->projectCategory,
+                'intendedRecipient' => $this->intendedRecipient,
+                'isDemoMode' => $this->isDemoMode,
             ],
         );
     }

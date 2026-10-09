@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => env('MAIL_MAILER', 'log'),
+    'default' => env('MAIL_MAILER', 'smtp'),
 
     /*
     |--------------------------------------------------------------------------
@@ -40,16 +40,17 @@ return [
         'smtp' => [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME') ?: (
-                in_array(strtolower((string) env('MAIL_ENCRYPTION')), ['ssl', 'smtps']) || (int) env('MAIL_PORT') === 465 
+                in_array(strtolower((string) env('MAIL_ENCRYPTION', 'tls')), ['ssl', 'smtps']) || (int) env('MAIL_PORT', 587) === 465 
                     ? 'smtps' 
                     : null
             ),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
-            'username' => env('MAIL_USERNAME'),
-            'password' => env('MAIL_PASSWORD'),
-            'timeout' => env('MAIL_TIMEOUT', 15),
+            'host' => env('MAIL_HOST', 'live.smtp.mailtrap.io'),
+            'port' => (int) env('MAIL_PORT', 587),
+            'username' => env('MAIL_USERNAME', 'api'),
+            'password' => env('MAIL_PASSWORD', env('MAILTRAP_API_KEY', '99280fd03a7e802ceae75a55ad0e53a9')),
+            'timeout' => (int) env('MAIL_TIMEOUT', 15),
+            'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -68,6 +69,12 @@ return [
         'resend' => [
             'transport' => 'resend',
             'key' => env('RESEND_API_KEY'),
+        ],
+
+        'mailtrap' => [
+            'transport' => 'mailtrap',
+            'api_key' => env('MAILTRAP_API_KEY'),
+            'inbox_id' => env('MAILTRAP_INBOX_ID'),
         ],
 
         'sendmail' => [
@@ -116,10 +123,12 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env('MAIL_FROM_ADDRESS', 'noreply@rashawassouf.com'),
+        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Rasha Wassouf Architecture')),
     ],
 
-    'admin_address' => env('ADMIN_EMAIL', env('MAIL_FROM_ADDRESS', 'director@rashawassouf.com')),
+    'demo_recipient' => env('MAILTRAP_DEMO_RECIPIENT', env('ADMIN_EMAIL', 'napoli9087italy@gmail.com')),
+
+    'admin_address' => env('ADMIN_EMAIL', 'napoli9087italy@gmail.com'),
 
 ];

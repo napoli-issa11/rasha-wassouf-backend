@@ -26,6 +26,21 @@
                     <!-- Body Content -->
                     <tr>
                         <td style="padding: 35px 35px 40px;">
+                            @if(!empty($isDemoMode))
+                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom: 24px; background: rgba(212, 175, 55, 0.08); border: 1px solid rgba(212, 175, 55, 0.35); border-left: 4px solid #D4AF37; border-radius: 4px;">
+                                    <tr>
+                                        <td style="padding: 14px 18px;">
+                                            <p style="margin: 0 0 4px; font-size: 11px; color: #D4AF37; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">
+                                                ✉ Mailtrap Demo Sandbox Mode • Routed to Admin
+                                            </p>
+                                            <p style="margin: 0; font-size: 12px; color: #C5C6D0; line-height: 1.5;">
+                                                Target Client: <strong style="color: #FFFFFF;">{{ $intendedRecipient ?? 'Client' }}</strong> ({{ $clientName }}). Once your custom domain is connected, replies will be dispatched directly to client inboxes.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
+                            @endif
+
                             @if(!empty($clientName))
                                 <p style="margin: 0 0 18px; font-size: 16px; color: #FFFFFF; font-weight: bold;">
                                     Dear {{ $clientName }},
