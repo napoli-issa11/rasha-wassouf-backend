@@ -122,7 +122,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/admin/inquiries/{id}', [ProjectInquiryController::class, 'destroy']);
 });
 
-// Admin Direct Client Email Reply (Protected with internal multi-auth validation)
+// Admin Direct Client Email Reply & Diagnostics (Protected with internal multi-auth validation)
 Route::post('/admin/reply-client', [ProjectInquiryController::class, 'reply']);
 Route::post('/admin/inquiries/{id}/reply', [ProjectInquiryController::class, 'reply']);
+Route::post('/admin/test-email', [ProjectInquiryController::class, 'testEmail']);
 

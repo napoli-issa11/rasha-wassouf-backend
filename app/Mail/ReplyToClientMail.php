@@ -37,8 +37,11 @@ class ReplyToClientMail extends Mailable
      */
     public function envelope(): Envelope
     {
+        $replyTo = config('mail.admin_address') ?: config('mail.from.address');
+
         return new Envelope(
             subject: $this->emailSubject,
+            replyTo: $replyTo ? [$replyTo] : [],
         );
     }
 

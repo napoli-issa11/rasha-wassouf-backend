@@ -39,18 +39,23 @@ class ProjectInquiryController extends Controller
             $inquiry->created_at = now();
         }
 
-        // 4. Asynchronously dispatch emails via queue or sync
+        // 4. Dispatch emails via queue if worker active, otherwise synchronously via sendNow
         try {
             // Email 1: Admin Notification - destination strictly configured from environment
             $adminEmail = config('mail.admin_address') 
-                ?: env('ADMIN_EMAIL') 
-                ?: env('MAIL_FROM_ADDRESS');
+                ?: config('mail.from.address');
+
+            $useQueue = config('queue.default') !== 'sync' && filter_var(config('queue.worker_active', false), FILTER_VALIDATE_BOOLEAN);
 
             if ($adminEmail) {
                 try {
-                    Mail::to($adminEmail)->queue(new AdminInquiryNotification($inquiry));
+                    if ($useQueue) {
+                        Mail::to($adminEmail)->queue(new AdminInquiryNotification($inquiry));
+                    } else {
+                        Mail::to($adminEmail)->sendNow(new AdminInquiryNotification($inquiry));
+                    }
                 } catch (\Throwable $qEx) {
-                    Mail::to($adminEmail)->send(new AdminInquiryNotification($inquiry));
+                    Mail::to($adminEmail)->sendNow(new AdminInquiryNotification($inquiry));
                 }
             } else {
                 Log::warning('ADMIN_EMAIL not configured in .env. Skipping admin inquiry notification email dispatch.');
@@ -58,13 +63,17 @@ class ProjectInquiryController extends Controller
 
             // Email 2: Professional Auto-Reply to Client
             try {
-                Mail::to($inquiry->email)->queue(new UserAutoReply($inquiry));
+                if ($useQueue) {
+                    Mail::to($inquiry->email)->queue(new UserAutoReply($inquiry));
+                } else {
+                    Mail::to($inquiry->email)->sendNow(new UserAutoReply($inquiry));
+                }
             } catch (\Throwable $qEx) {
-                Mail::to($inquiry->email)->send(new UserAutoReply($inquiry));
+                Mail::to($inquiry->email)->sendNow(new UserAutoReply($inquiry));
             }
         } catch (\Throwable $e) {
             // Log queue/mail failure without breaking the client HTTP success response
-            Log::error('Failed to queue project inquiry emails: ' . $e->getMessage(), [
+            Log::error('Failed to dispatch project inquiry emails: ' . $e->getMessage(), [
                 'inquiry_id' => $inquiry->id ?? null,
                 'exception' => $e,
             ]);
@@ -186,7 +195,7 @@ class ProjectInquiryController extends Controller
 
     /**
      * Admin Dashboard: Send a direct email reply to a client inquiry (Protected).
-     * Sends email immediately via Mail::to($request->email)->send(...) instead of relying on frontend mailto.
+     * Sends email immediately via Mail::to($request->email)->send(...) without silent failures.
      */
     public function reply(Request $request): JsonResponse
     {
@@ -230,9 +239,12 @@ class ProjectInquiryController extends Controller
             }
         }
 
-        // Pre-generate webmail and mailto fallback links for guaranteed delivery
+        // Pre-generate webmail and mailto fallback links for manual dispatch
         $gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=' . rawurlencode($recipientEmail) . '&su=' . rawurlencode($subject) . '&body=' . rawurlencode($messageText);
         $mailtoUrl = 'mailto:' . rawurlencode($recipientEmail) . '?subject=' . rawurlencode($subject) . '&body=' . rawurlencode($messageText);
+
+        $defaultMailer = config('mail.default', 'log');
+        $isDryRun = in_array($defaultMailer, ['log', 'array']);
 
         try {
             Mail::to($recipientEmail)->send(new ReplyToClientMail(
@@ -242,8 +254,23 @@ class ProjectInquiryController extends Controller
                 projectCategory: $projectCategory
             ));
 
+            if ($isDryRun) {
+                Log::warning("Reply to {$recipientEmail} was written to local server log because MAIL_MAILER is configured as '{$defaultMailer}'. Configure SMTP or Resend on Render to deliver to recipient inboxes.");
+
+                return response()->json([
+                    'status' => 'log_driver',
+                    'delivered' => false,
+                    'mailer' => $defaultMailer,
+                    'message' => "Email was saved to local server log (MAIL_MAILER={$defaultMailer}). To deliver to real recipient inboxes, configure an active mail driver (such as SMTP or Resend) in Render environment variables.",
+                    'gmail' => $gmailUrl,
+                    'mailto' => $mailtoUrl,
+                ]);
+            }
+
             return response()->json([
                 'status' => 'success',
+                'delivered' => true,
+                'mailer' => $defaultMailer,
                 'message' => 'Reply email sent successfully to ' . $recipientEmail,
                 'gmail' => $gmailUrl,
                 'mailto' => $mailtoUrl,
@@ -252,16 +279,82 @@ class ProjectInquiryController extends Controller
             Log::error('Mail server encountered issue sending reply to client: ' . $e->getMessage(), [
                 'recipient' => $recipientEmail,
                 'inquiry_id' => $validated['inquiry_id'] ?? null,
+                'mailer' => $defaultMailer,
                 'exception' => $e,
             ]);
 
-            // Graceful fallback response instead of 500 crash
             return response()->json([
-                'status' => 'mail_fallback',
-                'message' => 'Host mail relay is offline or unconfigured. Dispatched via direct mail client.',
+                'status' => 'error',
+                'delivered' => false,
+                'mailer' => $defaultMailer,
+                'message' => 'Failed to deliver email via ' . $defaultMailer . ': ' . $e->getMessage(),
                 'gmail' => $gmailUrl,
                 'mailto' => $mailtoUrl,
-            ], 200);
+            ], 422);
+        }
+    }
+
+    /**
+     * Admin Dashboard: Test email configuration and connectivity (Protected).
+     * Dispatches a live test email and returns diagnostic telemetry.
+     */
+    public function testEmail(Request $request): JsonResponse
+    {
+        $authHeader = $request->header('Authorization');
+        if (!$request->user() && empty($authHeader)) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthenticated.'], 401);
+        }
+
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $recipientEmail = trim($request->input('email'));
+        $defaultMailer = config('mail.default', 'log');
+        $smtpConfig = config('mail.mailers.smtp', []);
+        $resendKey = config('mail.mailers.resend.key') ?: config('services.resend.key');
+
+        $telemetry = [
+            'mailer' => $defaultMailer,
+            'host' => $smtpConfig['host'] ?? null,
+            'port' => $smtpConfig['port'] ?? null,
+            'scheme' => $smtpConfig['scheme'] ?? null,
+            'username_configured' => !empty($smtpConfig['username']),
+            'resend_configured' => !empty($resendKey),
+            'from_address' => config('mail.from.address'),
+            'from_name' => config('mail.from.name'),
+        ];
+
+        try {
+            Mail::raw("This is a diagnostic test email from Rasha Wassouf Architecture & Interior Design Studio.\n\nConfiguration Telemetry:\nMailer: {$defaultMailer}\nHost: " . ($smtpConfig['host'] ?? 'N/A') . "\nPort: " . ($smtpConfig['port'] ?? 'N/A') . "\nTimestamp: " . now()->toIso8601String(), function ($msg) use ($recipientEmail, $defaultMailer) {
+                $msg->to($recipientEmail)
+                    ->subject("✨ Email Delivery Diagnostic Test [{$defaultMailer}]");
+            });
+
+            if (in_array($defaultMailer, ['log', 'array'])) {
+                return response()->json([
+                    'status' => 'log_driver',
+                    'delivered' => false,
+                    'message' => "Test email logged to storage/logs/laravel.log. MAIL_MAILER is currently set to '{$defaultMailer}'. Real delivery requires configuring SMTP or Resend.",
+                    'telemetry' => $telemetry,
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'delivered' => true,
+                'message' => "Test email successfully dispatched to {$recipientEmail} via {$defaultMailer}!",
+                'telemetry' => $telemetry,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Diagnostic test email failed: ' . $e->getMessage(), ['exception' => $e]);
+
+            return response()->json([
+                'status' => 'error',
+                'delivered' => false,
+                'message' => 'Test email failed: ' . $e->getMessage(),
+                'telemetry' => $telemetry,
+            ], 422);
         }
     }
 }
