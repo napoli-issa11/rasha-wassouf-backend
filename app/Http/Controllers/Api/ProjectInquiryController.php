@@ -199,9 +199,8 @@ class ProjectInquiryController extends Controller
      */
     public function reply(Request $request): JsonResponse
     {
-        // 1. Verify authentication header
-        $authHeader = $request->header('Authorization');
-        if (!$request->user() && empty($authHeader)) {
+        // 1. Verify authenticated admin user
+        if (!$request->user()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthenticated.',
@@ -370,8 +369,7 @@ class ProjectInquiryController extends Controller
      */
     public function testEmail(Request $request): JsonResponse
     {
-        $authHeader = $request->header('Authorization');
-        if (!$request->user() && empty($authHeader)) {
+        if (!$request->user()) {
             return response()->json(['status' => 'error', 'message' => 'Unauthenticated.'], 401);
         }
 

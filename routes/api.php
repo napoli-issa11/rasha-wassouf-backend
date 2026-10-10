@@ -23,10 +23,8 @@ use App\Http\Controllers\Api\CategoryController;
 Route::get('/projects', [ProjectController::class, 'index']);
 Route::get('/projects/{id}', [ProjectController::class, 'show']);
 Route::post('/projects/{id}/like', [ProjectController::class, 'toggleLike']);
-Route::post('/projects/upload', [ProjectController::class, 'uploadImage']);
 Route::get('/categories', [CategoryController::class, 'index']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
-Route::post('/categories/upload', [CategoryController::class, 'uploadImage']);
 
 // Real-Time Dashboard Stats (Counts live database records)
 Route::get('/admin/stats', [ProjectController::class, 'dashboardStats']);
@@ -48,9 +46,9 @@ Route::get('/settings', [SettingController::class, 'index']);
 // Project Brief Inquiries (Rate-limited: 10 requests per minute to thwart spam/abuse)
 Route::post('/inquiries', [ProjectInquiryController::class, 'store'])->middleware('throttle:10,1');
 
-// Admin Authentication (Public)
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/admin/login', [AuthController::class, 'login']);
+// Admin Authentication (Public, Throttled: 5 attempts per minute)
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/admin/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -78,11 +76,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/admin/comments/{id}/approve', [CommentController::class, 'approve']);
     Route::delete('/admin/comments/{id}', [CommentController::class, 'destroy']);
 
-    // Projects CMS (Full CRUD)
+    // Projects CMS (Full CRUD & Direct Cloudinary Upload)
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::put('/projects/{id}', [ProjectController::class, 'update']);
     Route::post('/projects/{id}', [ProjectController::class, 'update']);
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
+    Route::post('/projects/upload', [ProjectController::class, 'uploadImage']);
     Route::post('/projects/{id}/upload-image', [ProjectController::class, 'uploadImage']);
     Route::post('/admin/projects/upload', [ProjectController::class, 'uploadImage']);
 
@@ -90,6 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/categories', [CategoryController::class, 'store']);
     Route::put('/categories/{id}', [CategoryController::class, 'update']);
     Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+    Route::post('/categories/upload', [CategoryController::class, 'uploadImage']);
     Route::post('/categories/{id}/upload-image', [CategoryController::class, 'uploadImage']);
     Route::post('/admin/categories/upload', [CategoryController::class, 'uploadImage']);
 
@@ -120,10 +120,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/inquiries/{id}', [ProjectInquiryController::class, 'show']);
     Route::patch('/admin/inquiries/{id}/status', [ProjectInquiryController::class, 'updateStatus']);
     Route::delete('/admin/inquiries/{id}', [ProjectInquiryController::class, 'destroy']);
-});
 
-// Admin Direct Client Email Reply & Diagnostics (Protected with internal multi-auth validation)
-Route::post('/admin/reply-client', [ProjectInquiryController::class, 'reply']);
-Route::post('/admin/inquiries/{id}/reply', [ProjectInquiryController::class, 'reply']);
-Route::post('/admin/test-email', [ProjectInquiryController::class, 'testEmail']);
+    // Admin Direct Client Email Reply & Diagnostics (Protected via auth:sanctum)
+    Route::post('/admin/reply-client', [ProjectInquiryController::class, 'reply']);
+    Route::post('/admin/inquiries/{id}/reply', [ProjectInquiryController::class, 'reply']);
+    Route::post('/admin/test-email', [ProjectInquiryController::class, 'testEmail']);
+});
 
