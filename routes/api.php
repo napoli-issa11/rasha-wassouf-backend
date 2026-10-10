@@ -21,10 +21,10 @@ use App\Http\Controllers\Api\CategoryController;
 
 // Projects & Categories
 Route::get('/projects', [ProjectController::class, 'index']);
-Route::get('/projects/{id}', [ProjectController::class, 'show']);
-Route::post('/projects/{id}/like', [ProjectController::class, 'toggleLike']);
+Route::get('/projects/{id}', [ProjectController::class, 'show'])->whereNumber('id');
+Route::post('/projects/{id}/like', [ProjectController::class, 'toggleLike'])->whereNumber('id');
 Route::get('/categories', [CategoryController::class, 'index']);
-Route::get('/categories/{id}', [CategoryController::class, 'show']);
+Route::get('/categories/{id}', [CategoryController::class, 'show'])->whereNumber('id');
 
 // Real-Time Dashboard Stats (Counts live database records)
 Route::get('/admin/stats', [ProjectController::class, 'dashboardStats']);
@@ -77,21 +77,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/admin/comments/{id}', [CommentController::class, 'destroy']);
 
     // Projects CMS (Full CRUD & Direct Cloudinary Upload)
-    Route::post('/projects', [ProjectController::class, 'store']);
-    Route::put('/projects/{id}', [ProjectController::class, 'update']);
-    Route::post('/projects/{id}', [ProjectController::class, 'update']);
-    Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/upload', [ProjectController::class, 'uploadImage']);
-    Route::post('/projects/{id}/upload-image', [ProjectController::class, 'uploadImage']);
     Route::post('/admin/projects/upload', [ProjectController::class, 'uploadImage']);
+    Route::post('/projects', [ProjectController::class, 'store']);
+    Route::put('/projects/{id}', [ProjectController::class, 'update'])->whereNumber('id');
+    Route::post('/projects/{id}', [ProjectController::class, 'update'])->whereNumber('id');
+    Route::delete('/projects/{id}', [ProjectController::class, 'destroy'])->whereNumber('id');
+    Route::post('/projects/{id}/upload-image', [ProjectController::class, 'uploadImage'])->whereNumber('id');
 
     // Categories CMS (Full CRUD & Direct Cloudinary Upload)
-    Route::post('/categories', [CategoryController::class, 'store']);
-    Route::put('/categories/{id}', [CategoryController::class, 'update']);
-    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
     Route::post('/categories/upload', [CategoryController::class, 'uploadImage']);
-    Route::post('/categories/{id}/upload-image', [CategoryController::class, 'uploadImage']);
     Route::post('/admin/categories/upload', [CategoryController::class, 'uploadImage']);
+    Route::post('/categories', [CategoryController::class, 'store']);
+    Route::put('/categories/{id}', [CategoryController::class, 'update'])->whereNumber('id');
+    Route::delete('/categories/{id}', [CategoryController::class, 'destroy'])->whereNumber('id');
+    Route::post('/categories/{id}/upload-image', [CategoryController::class, 'uploadImage'])->whereNumber('id');
 
     // Home Page CMS (Full CRUD)
     Route::post('/home-slides', [HomeSlideController::class, 'store']);
