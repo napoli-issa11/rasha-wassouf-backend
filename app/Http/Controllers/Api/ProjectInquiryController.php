@@ -8,10 +8,14 @@ use App\Mail\AdminInquiryNotification;
 use App\Mail\UserAutoReply;
 use App\Mail\ReplyToClientMail;
 use App\Models\ProjectInquiry;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 
 class ProjectInquiryController extends Controller
 {
@@ -41,9 +45,8 @@ class ProjectInquiryController extends Controller
 
         // 4. Dispatch emails via queue if worker active, otherwise synchronously via sendNow
         try {
-            // Email 1: Admin Notification - destination strictly configured from environment
-            $adminEmail = config('mail.admin_address') 
-                ?: config('mail.from.address');
+            // Email 1: Admin Notification - dynamically dispatched to active admin
+            $adminEmail = $this->resolveAdminNotificationEmail($request);
 
             $useQueue = config('queue.default') !== 'sync' && filter_var(config('queue.worker_active', false), FILTER_VALIDATE_BOOLEAN);
 
@@ -58,7 +61,7 @@ class ProjectInquiryController extends Controller
                     Mail::to($adminEmail)->sendNow(new AdminInquiryNotification($inquiry));
                 }
             } else {
-                Log::warning('ADMIN_EMAIL not configured in .env. Skipping admin inquiry notification email dispatch.');
+                Log::warning('No active admin notification email found. Skipping admin inquiry notification email dispatch.');
             }
 
             // Email 2: Professional Auto-Reply to Client
@@ -91,6 +94,76 @@ class ProjectInquiryController extends Controller
                 'created_at' => $inquiry->created_at ? $inquiry->created_at->toIso8601String() : now()->toIso8601String(),
             ],
         ], 201);
+    }
+
+    /**
+     * Dynamically resolve the active admin email address for inquiry notifications.
+     * Prioritizes:
+     * 1. Authenticated admin user (if submitting during an active admin session)
+     * 2. Active admin from the database (admin table or User model)
+     * 3. Configured environment fallback (mail.admin_address or mail.from.address)
+     */
+    protected function resolveAdminNotificationEmail(?Request $request = null): ?string
+    {
+        // 1. Check authenticated admin user from request or Auth guard
+        try {
+            $authenticatedUser = $request?->user() ?? Auth::user();
+            if ($authenticatedUser && !empty($authenticatedUser->email) && filter_var($authenticatedUser->email, FILTER_VALIDATE_EMAIL)) {
+                return trim($authenticatedUser->email);
+            }
+        } catch (\Throwable $authEx) {
+            Log::debug('Could not retrieve authenticated admin email: ' . $authEx->getMessage());
+        }
+
+        // 2. Retrieve active admin email from the database
+        try {
+            // Check dedicated 'admins' table if present
+            if (Schema::hasTable('admins')) {
+                $adminFromTable = DB::table('admins')
+                    ->whereNotNull('email')
+                    ->where('email', '!=', '')
+                    ->orderBy('id', 'asc')
+                    ->value('email');
+
+                if (!empty($adminFromTable) && filter_var($adminFromTable, FILTER_VALIDATE_EMAIL)) {
+                    return trim($adminFromTable);
+                }
+            }
+
+            // Retrieve from users table (primary admin accounts in this application)
+            if (Schema::hasTable('users')) {
+                $query = User::query()->whereNotNull('email')->where('email', '!=', '');
+
+                if (Schema::hasColumn('users', 'is_admin')) {
+                    $query->orderByRaw('is_admin DESC');
+                } elseif (Schema::hasColumn('users', 'role')) {
+                    $query->orderByRaw("CASE WHEN role = 'admin' THEN 0 ELSE 1 END");
+                }
+
+                $adminUser = (clone $query)
+                    ->where(function ($q) {
+                        $q->where('name', 'like', '%admin%')
+                          ->orWhere('email', 'like', '%admin%');
+                    })
+                    ->orderBy('id', 'asc')
+                    ->first()
+                    ?? $query->orderBy('id', 'asc')->first();
+
+                if ($adminUser && !empty($adminUser->email) && filter_var($adminUser->email, FILTER_VALIDATE_EMAIL)) {
+                    return trim($adminUser->email);
+                }
+            }
+        } catch (\Throwable $dbEx) {
+            Log::warning('Database lookup failed when resolving active admin notification email: ' . $dbEx->getMessage());
+        }
+
+        // 3. Fallback to configured admin address or from address if database lookup was unavailable
+        $configAdmin = config('mail.admin_address') ?: config('mail.from.address');
+        if (!empty($configAdmin) && filter_var($configAdmin, FILTER_VALIDATE_EMAIL)) {
+            return trim($configAdmin);
+        }
+
+        return null;
     }
 
     /**
